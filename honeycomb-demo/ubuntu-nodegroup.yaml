@@ -1,0 +1,18 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: honeycomb-demo
+  region: us-east-2
+
+managedNodeGroups:
+  - name: ubuntu-nodes
+    instanceType: t3.medium
+    desiredCapacity: 2
+    minSize: 1
+    maxSize: 3
+    ami: ami-05c9c949ffd6cfd04   # Ubuntu 24.04 LTS (Noble) EKS 1.34 — us-east-2
+    amiFamily: Ubuntu2204
+    overrideBootstrapCommand: |
+      #!/bin/bash
+      /etc/eks/bootstrap.sh honeycomb-demo

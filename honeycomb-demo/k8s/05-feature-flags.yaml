@@ -1,0 +1,14 @@
+# Feature flags ConfigMap — controls runtime chaos injection.
+# Flip CHAOS_LATENCY_MS to a non-zero value to simulate a slow redirect service.
+# The redirect-service polls this via envFrom; update with inject-chaos.sh / remove-chaos.sh.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: feature-flags
+  namespace: url-shortener
+data:
+  # Set to e.g. "800" to inject 800ms artificial latency into every redirect lookup.
+  # Set to "0" or "" to disable chaos.
+  CHAOS_LATENCY_MS: "0"
+  # Set to "true" to make ~20% of stats writes fail with 500, burning the SLO.
+  CHAOS_STATS_ERROR_RATE: "0"

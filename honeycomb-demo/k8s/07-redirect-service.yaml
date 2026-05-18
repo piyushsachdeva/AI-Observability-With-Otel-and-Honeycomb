@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redirect-service
+  namespace: url-shortener
+  labels:
+    app: redirect-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: redirect-service
+  template:
+    metadata:
+      labels:
+        app: redirect-service
+    spec:
+      containers:
+        - name: redirect-service
+          image: piyushsachdeva/url-shortener-redirect:otel
+          imagePullPolicy: Always
+          env:
+            - name: DB_HOST
+              value: postgres.url-shortener.svc.cluster.local
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: database
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+            - name: REDIS_HOST
+              value: redis.url-shortener.svc.cluster.local
+            - name: SERVICE_PORT
+              value: "8002"
+            - name: OTEL_SERVICE_NAME
+              value: redirect-service
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.url-shortener.svc.cluster.local:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            - name: DEPLOYMENT_ENV
+              value: production
+          # Feature flags loaded from ConfigMap — update with inject-chaos.sh to flip them live
+          envFrom:
+            - configMapRef:
+                name: feature-flags
+          ports:
+            - containerPort: 8002
+              name: http
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:15-alpine
+          command:
+            - sh
+            - -c
+            - until pg_isready -h postgres.url-shortener.svc.cluster.local -p 5432 -U postgres; do sleep 2; done
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redirect-service
+  namespace: url-shortener
+spec:
+  selector:
+    app: redirect-service
+  ports:
+    - port: 8002
+      targetPort: 8002
+      name: http

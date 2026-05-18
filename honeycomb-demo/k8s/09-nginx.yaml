@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: url-shortener
+data:
+  nginx.conf: |
+    events { worker_connections 1024; }
+    http {
+      upstream link_service     { server link-service:8001; }
+      upstream redirect_service { server redirect-service:8002; }
+      upstream stats_service    { server stats-service:8003; }
+      upstream frontend         { server frontend:80; }
+
+      server {
+        listen 80;
+
+        location /health             { return 200 "ok\n"; add_header Content-Type text/plain; }
+
+        # Routes with /api/ prefix (used by the frontend JS)
+        location /api/generate       { rewrite ^/api/(.*) /$1 break; proxy_pass http://link_service;     proxy_set_header Host $host; }
+        location /api/links          { rewrite ^/api/(.*) /$1 break; proxy_pass http://link_service;     proxy_set_header Host $host; }
+        location /api/delete         { rewrite ^/api/(.*) /$1 break; proxy_pass http://link_service;     proxy_set_header Host $host; }
+        location /api/stats/health   { return 200 '{"status":"healthy"}'; add_header Content-Type application/json; }
+        location /api/stats          { rewrite ^/api/(.*) /$1 break; proxy_pass http://stats_service;    proxy_set_header Host $host; }
+        location /api/redirect/      { rewrite ^/api/(.*) /$1 break; proxy_pass http://redirect_service; proxy_set_header Host $host; }
+
+        # Direct routes (used by load-test.sh and curl)
+        location /generate  { proxy_pass http://link_service;     proxy_set_header Host $host; }
+        location /links     { proxy_pass http://link_service;     proxy_set_header Host $host; }
+        location /delete    { proxy_pass http://link_service;     proxy_set_header Host $host; }
+        location /redirect/ { proxy_pass http://redirect_service; proxy_set_header Host $host; }
+        location /stats     { proxy_pass http://stats_service;    proxy_set_header Host $host; }
+
+        # /r/:id shortcut — matches what the frontend builds for display URLs
+        location /r/ { rewrite ^/r/(.*) /redirect/$1 break; proxy_pass http://redirect_service; proxy_set_header Host $host; }
+
+        location /          { proxy_pass http://frontend;         proxy_set_header Host $host; }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-gateway
+  namespace: url-shortener
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-gateway
+  template:
+    metadata:
+      labels:
+        app: nginx-gateway
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: nginx-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-gateway
+  namespace: url-shortener
+spec:
+  selector:
+    app: nginx-gateway
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080
+  type: NodePort
